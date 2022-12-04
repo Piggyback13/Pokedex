@@ -7,14 +7,25 @@
 
 import SwiftUI
 
+public protocol PokedexService {
+    func getPokedexes(callback: (Result<[PokedexModel], Error>) -> ())
+}
+
+public typealias PokedexDetailProvider<Details: View> = (Int, String) -> Details
+
 extension PokedexList {
-    class ViewModel: ObservableObject {
+    class ViewModel<DetailsView: View>: ObservableObject {
         @Published var pokedexes: [PokedexModel]
         private let pokedexService: PokedexService
+        let detailsProvider: PokedexDetailProvider<DetailsView>
         
-        init(pokedexService: PokedexService) {
+        init(
+            pokedexService: PokedexService,
+            detailsProvider: @escaping PokedexDetailProvider<DetailsView>
+        ) {
             self.pokedexes = []
             self.pokedexService = pokedexService
+            self.detailsProvider = detailsProvider
         }
         
         func loadPokedex() {
@@ -30,23 +41,55 @@ extension PokedexList {
     }
 }
 
-public protocol PokedexService {
-    func getPokedexes(callback: (Result<[PokedexModel], Error>) -> ())
-}
-
-public struct PokedexList: View {
+public struct PokedexList<DetailsView: View>: View {
+    @StateObject var viewModel: ViewModel<DetailsView>
     
-    @StateObject var viewModel: ViewModel = ViewModel()
-    
-    public init() {}
+    public init(
+        pokedexService: PokedexService,
+        pokedexDetailsProvider: @escaping PokedexDetailProvider<DetailsView>
+    ) {
+        self._viewModel = StateObject(
+            wrappedValue: ViewModel(
+                pokedexService: pokedexService,
+                detailsProvider: pokedexDetailsProvider
+            )
+        )
+    }
     
     public var body: some View {
-        Text("Hello, World!")
+        List(self.viewModel.pokedexes) { pokedex in
+            NavigationLink(
+                destination: {
+                    self.viewModel.detailsProvider(pokedex.id, pokedex.name)
+                },
+                label: {
+                    HStack {
+                        Text(pokedex.name)
+                        Spacer()
+                        Text("\(pokedex.numberOfPokemon)")
+                    }
+                }
+            )
+        }
+        .navigationTitle("Pokedex")
+        .onAppear(perform: self.viewModel.loadPokedex)
     }
 }
 
 struct PokedexList_Previews: PreviewProvider {
+    class MockedService: PokedexService {
+        func getPokedexes(callback: (Result<[PokedexModel], Error>) -> ()) {
+            callback(.success([
+                .init(id: 1, name: "Kanto", numberOfPokemon: 151),
+                .init(id: 2, name: "Johto", numberOfPokemon: 251)
+            ]))
+        }
+    }
+    
     static var previews: some View {
-        PokedexList()
+        PokedexList(
+            pokedexService: MockedService()) { id, name in
+                Text("Pokedex with id \(id)")
+            }
     }
 }
